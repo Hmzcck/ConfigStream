@@ -10,86 +10,313 @@ public class FileCacheService : IFileCacheService
     private readonly ILogger<FileCacheService> _logger;
     private readonly string _cacheDirectory;
     private readonly JsonSerializerOptions _jsonOptions;
+    private readonly SemaphoreSlim _fileLock;
+    private readonly TimeSpan _defaultCacheExpiry;
 
     public FileCacheService(ILogger<FileCacheService> logger)
     {
         _logger = logger;
         _cacheDirectory = Path.Combine(Path.GetTempPath(), "DynamicConfig");
-        _jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        _fileLock = new SemaphoreSlim(1, 1);
+        _defaultCacheExpiry = TimeSpan.FromHours(24);
 
-        Directory.CreateDirectory(_cacheDirectory);
-    }
-
-    public async Task<IEnumerable<ConfigurationItem>> GetAllConfigurationsAsync(string applicationName)
-    {
-        List<ConfigurationItem> configurations = new List<ConfigurationItem>();
-        string appDirectory = Path.Combine(_cacheDirectory, SanitizeFileName(applicationName));
-
-        if (!Directory.Exists(appDirectory))
-            return configurations;
-
-        string[] files = Directory.GetFiles(appDirectory, "*.json");
-        foreach (string file in files)
+        _jsonOptions = new JsonSerializerOptions
         {
-            try
-            {
-                string json = await File.ReadAllTextAsync(file);
-                ConfigurationItem? config = JsonSerializer.Deserialize<ConfigurationItem>(json, _jsonOptions);
-                if (config != null)
-                    configurations.Add(config);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to read cache file {File}", file);
-            }
-        }
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+            WriteIndented = true,
+            PropertyNameCaseInsensitive = true
+        };
 
-        return configurations;
+        EnsureCacheDirectoryExists();
     }
+
 
     public async Task<ConfigurationItem?> GetConfigurationAsync(string applicationName, string key)
+
     {
+        await _fileLock.WaitAsync();
         try
         {
-            string filePath = GetCacheFilePath(applicationName, key);
-            if (!File.Exists(filePath))
-                return null;
+            CachedConfiguration? cachedConfig = await LoadCachedConfigurationAsync(applicationName);
 
-            string json = await File.ReadAllTextAsync(filePath);
-            return JsonSerializer.Deserialize<ConfigurationItem>(json, _jsonOptions);
+            if (cachedConfig == null || IsExpired(cachedConfig))
+            {
+                _logger.LogDebug("Cache expired or not found for {ApplicationName}", applicationName);
+                return null;
+            }
+
+            if (cachedConfig.Configurations.TryGetValue(key, out CachedConfigurationItem? cachedItem))
+            {
+                return ConvertToConfigurationItem(key, applicationName, cachedItem);
+            }
+
+            return null;
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to read cache file for {Key}", key);
+            _logger.LogWarning(ex, "Failed to read configuration {Key} from cache for {ApplicationName}", key,
+                applicationName);
             return null;
+        }
+        finally
+        {
+            _fileLock.Release();
         }
     }
 
     public async Task SaveConfigurationAsync(string applicationName, string key, ConfigurationItem configuration)
     {
+        await _fileLock.WaitAsync();
         try
         {
-            string filePath = GetCacheFilePath(applicationName, key);
-            string json = JsonSerializer.Serialize(configuration, _jsonOptions);
-            await File.WriteAllTextAsync(filePath, json);
+            CachedConfiguration cachedConfig = await LoadCachedConfigurationAsync(applicationName) ??
+                                               CreateNewCachedConfiguration(applicationName);
 
-            _logger.LogDebug("Saved configuration {Key} to cache", key);
+            cachedConfig.Configurations[key] = new CachedConfigurationItem
+            {
+                Value = configuration.Value,
+                Type = configuration.Type.ToString(),
+                IsActive = configuration.IsActive,
+                CachedAt = DateTime.UtcNow
+            };
+
+            cachedConfig.LastUpdated = DateTime.UtcNow;
+            cachedConfig.ExpiresAt = DateTime.UtcNow.Add(_defaultCacheExpiry);
+
+            await SaveCachedConfigurationAsync(applicationName, cachedConfig);
+
+            _logger.LogDebug("Saved configuration {Key} to cache for {ApplicationName}", key, applicationName);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to save configuration {Key} to cache", key);
+            _logger.LogError(ex, "Failed to save configuration {Key} to cache for {ApplicationName}", key,
+                applicationName);
+        }
+        finally
+        {
+            _fileLock.Release();
         }
     }
 
-    private string GetCacheFilePath(string applicationName, string key)
+    public async Task<IEnumerable<ConfigurationItem>> GetAllConfigurationsAsync(string applicationName)
     {
-        string appDirectory = Path.Combine(_cacheDirectory, SanitizeFileName(applicationName));
-        Directory.CreateDirectory(appDirectory);
-        return Path.Combine(appDirectory, $"{SanitizeFileName(key)}.json");
+        await _fileLock.WaitAsync();
+        try
+        {
+            CachedConfiguration? cachedConfig = await LoadCachedConfigurationAsync(applicationName);
+
+            if (cachedConfig == null || IsExpired(cachedConfig))
+            {
+                _logger.LogDebug("Cache expired or not found for {ApplicationName}", applicationName);
+                return [];
+            }
+
+            return cachedConfig.Configurations.Select(kvp =>
+                ConvertToConfigurationItem(kvp.Key, applicationName, kvp.Value)).ToList();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to load all configurations from cache for {ApplicationName}",
+                applicationName);
+            return [];
+        }
+        finally
+        {
+            _fileLock.Release();
+        }
+    }
+
+    public async Task SaveAllConfigurationsAsync(string applicationName, IEnumerable<ConfigurationItem> configurations)
+    {
+        await _fileLock.WaitAsync();
+        try
+        {
+            CachedConfiguration cachedConfig = CreateNewCachedConfiguration(applicationName);
+
+            foreach (ConfigurationItem config in configurations)
+            {
+                cachedConfig.Configurations[config.Name] = new CachedConfigurationItem
+                {
+                    Value = config.Value,
+                    Type = config.Type.ToString(),
+                    IsActive = config.IsActive,
+                    CachedAt = DateTime.UtcNow
+                };
+            }
+
+            await SaveCachedConfigurationAsync(applicationName, cachedConfig);
+
+            _logger.LogDebug("Saved {Count} configurations to cache for {ApplicationName}",
+                cachedConfig.Configurations.Count, applicationName);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to save all configurations to cache for {ApplicationName}", applicationName);
+        }
+        finally
+        {
+            _fileLock.Release();
+        }
+    }
+
+    public async Task CleanupExpiredCacheAsync()
+    {
+        if (!Directory.Exists(_cacheDirectory))
+            return;
+
+        await _fileLock.WaitAsync();
+        try
+        {
+            string[] files = Directory.GetFiles(_cacheDirectory, "*_config.json");
+            int cleanupCount = 0;
+
+            foreach (string file in files)
+            {
+                try
+                {
+                    string json = await File.ReadAllTextAsync(file);
+                    CachedConfiguration? cachedConfig =
+                        JsonSerializer.Deserialize<CachedConfiguration>(json, _jsonOptions);
+
+                    if (cachedConfig != null && IsExpired(cachedConfig))
+                    {
+                        File.Delete(file);
+                        cleanupCount++;
+                        _logger.LogDebug("Deleted expired cache file: {FilePath}", file);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to process cache file {File} during cleanup", file);
+                    try
+                    {
+                        File.Delete(file);
+                        cleanupCount++;
+                    }
+                    catch
+                    {
+                        //TODO: Implement later
+                    }
+                }
+            }
+
+            if (cleanupCount > 0)
+            {
+                _logger.LogInformation("Cleaned up {Count} expired cache files", cleanupCount);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to cleanup expired cache files");
+        }
+        finally
+        {
+            _fileLock.Release();
+        }
+    }
+
+    public async Task ClearCacheAsync(string applicationName)
+    {
+        await _fileLock.WaitAsync();
+        try
+        {
+            string filePath = GetCacheFilePath(applicationName);
+            if (File.Exists(filePath))
+            {
+                File.Delete(filePath);
+                _logger.LogDebug("Cleared cache for {ApplicationName}", applicationName);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to clear cache for {ApplicationName}", applicationName);
+        }
+        finally
+        {
+            _fileLock.Release();
+        }
+    }
+
+
+    private async Task<CachedConfiguration?> LoadCachedConfigurationAsync(string applicationName)
+    {
+        string filePath = GetCacheFilePath(applicationName);
+
+        if (!File.Exists(filePath))
+            return null;
+        try
+        {
+            string json = await File.ReadAllTextAsync(filePath);
+            return JsonSerializer.Deserialize<CachedConfiguration>(json, _jsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            _logger.LogWarning(ex, "Invalid JSON in cache file for {ApplicationName}", applicationName);
+            return null;
+        }
+    }
+
+    private async Task SaveCachedConfigurationAsync(string applicationName, CachedConfiguration cachedConfig)
+    {
+        string filePath = GetCacheFilePath(applicationName);
+        string json = JsonSerializer.Serialize(cachedConfig, _jsonOptions);
+        await File.WriteAllTextAsync(filePath, json);
+    }
+
+    private CachedConfiguration CreateNewCachedConfiguration(string applicationName)
+    {
+        return new CachedConfiguration
+        {
+            ApplicationName = applicationName,
+            LastUpdated = DateTime.UtcNow,
+            ExpiresAt = DateTime.UtcNow.Add(_defaultCacheExpiry),
+            Configurations = new Dictionary<string, CachedConfigurationItem>()
+        };
+    }
+
+    private ConfigurationItem ConvertToConfigurationItem(string key, string applicationName,
+        CachedConfigurationItem cachedItem)
+    {
+        return new ConfigurationItem
+        {
+            Name = key,
+            ApplicationName = applicationName,
+            Value = cachedItem.Value,
+            Type = Enum.Parse<ConfigurationType>(cachedItem.Type, true),
+            IsActive = cachedItem.IsActive
+        };
+    }
+
+    private bool IsExpired(CachedConfiguration cachedConfig)
+    {
+        return DateTime.UtcNow > cachedConfig.ExpiresAt;
+    }
+
+    private string GetCacheFilePath(string applicationName)
+    {
+        var sanitizedName = SanitizeFileName(applicationName);
+        return Path.Combine(_cacheDirectory, $"{sanitizedName}_config.json");
     }
 
     private static string SanitizeFileName(string fileName)
     {
         return string.Join("_", fileName.Split(Path.GetInvalidFileNameChars()));
+    }
+
+    private void EnsureCacheDirectoryExists()
+    {
+        try
+        {
+            if (!Directory.Exists(_cacheDirectory))
+            {
+                Directory.CreateDirectory(_cacheDirectory);
+                _logger.LogDebug("Created cache directory: {CacheDirectory}", _cacheDirectory);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to create cache directory: {CacheDirectory}", _cacheDirectory);
+            throw;
+        }
     }
 }
