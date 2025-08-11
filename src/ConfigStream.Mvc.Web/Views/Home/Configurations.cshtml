@@ -59,13 +59,24 @@
             </div>
             <div class="card-body">
                 <div class="row">
-                    <div class="col-md-8">
+                    <div class="col-md-6">
                         <input type="text" class="form-control" id="testKey"
                             placeholder="Enter configuration key to test" />
                     </div>
                     <div class="col-md-4">
+                        <select class="form-control" id="testApplication">
+                            <option value="">Search All Applications</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
                         <button class="btn btn-success" onclick="testReader()">Test Reader</button>
                     </div>
+                </div>
+                <div class="mt-2">
+                    <small class="text-muted">
+                        <strong>Note:</strong> ConfigurationReader is bound to 'ConfigurationLibrary.Mvc.Web'.
+                        If key not found there, it will search other applications.
+                    </small>
                 </div>
                 <div id="testResult" class="mt-3"></div>
             </div>
@@ -137,10 +148,10 @@
 
         function loadConfigurations() {
             const appName = $('#filterByApplication').val();
-            
+
             // If no specific application selected, get ALL configurations from ALL applications
             const url = appName ? `/api/configuration?applicationName=${appName}` : '/api/configuration';
-            
+
             $.get(url, function (data) {
                 const tbody = $('#configurationsTable tbody');
                 tbody.empty();
@@ -148,18 +159,18 @@
                 data.forEach(function (config) {
                     const typeText = getTypeText(config.type);
                     const row = `
-                    <tr data-id="${config.id || ''}" data-name="${config.name.toLowerCase()}" data-app="${config.applicationName.toLowerCase()}">
-                        <td>${config.name}</td>
-                        <td>${typeText}</td>
-                        <td>${config.value || ''}</td>
-                        <td>${config.isActive === 1 ? 'Yes' : 'No'}</td>
-                        <td>${config.applicationName}</td>
-                        <td>
-                            <button class="btn btn-sm btn-warning" onclick="editConfiguration('${config.applicationName}', '${config.name}')">Edit</button>
-                            <button class="btn btn-sm btn-danger" onclick="deleteConfiguration('${config.applicationName}', '${config.name}')">Delete</button>
-                        </td>
-                    </tr>
-                `;
+                        <tr data-id="${config.id || ''}" data-name="${config.name.toLowerCase()}" data-app="${config.applicationName.toLowerCase()}">
+                            <td>${config.name}</td>
+                            <td>${typeText}</td>
+                            <td>${config.value || ''}</td>
+                            <td>${config.isActive === 1 ? 'Yes' : 'No'}</td>
+                            <td>${config.applicationName}</td>
+                            <td>
+                                <button class="btn btn-sm btn-warning" onclick="editConfiguration('${config.applicationName}', '${config.name}')">Edit</button>
+                                <button class="btn btn-sm btn-danger" onclick="deleteConfiguration('${config.applicationName}', '${config.name}')">Delete</button>
+                            </td>
+                        </tr>
+                    `;
                     tbody.append(row);
                 });
             }).fail(function () {
@@ -179,11 +190,17 @@
 
         function loadApplications() {
             $.get('/api/configuration/applications', function (data) {
-                const select = $('#filterByApplication');
-                select.find('option:not(:first)').remove();
+                const filterSelect = $('#filterByApplication');
+                const testSelect = $('#testApplication');
+
+                // Update filter dropdown
+                filterSelect.find('option:not(:first)').remove();
+                // Update test dropdown
+                testSelect.find('option:not(:first)').remove();
 
                 data.forEach(function (app) {
-                    select.append(`<option value="${app}">${app}</option>`);
+                    filterSelect.append(`<option value="${app}">${app}</option>`);
+                    testSelect.append(`<option value="${app}">${app}</option>`);
                 });
             });
         }
@@ -281,23 +298,33 @@
                 return;
             }
 
-            $.get(`/api/configuration/test-reader/${key}`, function (data) {
+            const appName = $('#testApplication').val();
+            const url = appName ?
+                `/api/configuration/test-reader/${key}?applicationName=${appName}` :
+                `/api/configuration/test-reader/${key}`;
+
+            $.get(url, function (data) {
+                const alertClass = data.type === 'not_found' ? 'alert-warning' : 'alert-success';
+                const title = data.type === 'not_found' ? 'Not Found' : 'Success!';
+
                 $('#testResult').html(`
-                <div class="alert alert-success">
-                    <strong>Success!</strong><br>
-                    Key: ${data.key}<br>
-                    Value: ${data.value}<br>
-                    Type: ${data.type}
-                </div>
-            `);
+                    <div class="alert ${alertClass}">
+                        <strong>${title}</strong><br>
+                        Key: ${data.key}<br>
+                        Value: ${data.value || 'null'}<br>
+                        Type: ${data.type}<br>
+                        Source: ${data.source}<br>
+                        <small class="text-muted">${data.note}</small>
+                    </div>
+                `);
             }).fail(function (xhr) {
                 const error = xhr.responseJSON ? xhr.responseJSON.error : 'Unknown error';
                 $('#testResult').html(`
-                <div class="alert alert-danger">
-                    <strong>Error!</strong><br>
-                    ${error}
-                </div>
-            `);
+                    <div class="alert alert-danger">
+                        <strong>Error!</strong><br>
+                        ${error}
+                    </div>
+                `);
             });
         }
 

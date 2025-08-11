@@ -175,13 +175,67 @@ public class ConfigurationController : ControllerBase
     }
 
     [HttpGet("test-reader/{key}")]
-    public ActionResult<object> TestReader(string key)
+    public ActionResult<object> TestReader(string key, [FromQuery] string? applicationName = null)
     {
         try
         {
+            // First try the injected reader (bound to ConfigurationLibrary.Mvc.Web)
             var value = _reader.GetValue<string>(key);
 
-            return Ok(new { key, value, type = "string" });
+            if (value != null)
+            {
+                return Ok(new
+                {
+                    key,
+                    value,
+                    type = "string",
+                    source = "ConfigurationReader (ConfigurationLibrary.Mvc.Web)",
+                    note = "Retrieved from ConfigurationReader bound to 'ConfigurationLibrary.Mvc.Web'"
+                });
+            }
+
+            // If not found in ConfigurationReader, try to find it in storage for any application
+            if (!string.IsNullOrEmpty(applicationName))
+            {
+                var config = _storage.GetAsync(applicationName, key).Result;
+                if (config != null && config.IsActive == 1)
+                {
+                    return Ok(new
+                    {
+                        key,
+                        value = config.Value,
+                        type = config.Type.ToString(),
+                        source = $"Storage ({applicationName})",
+                        note = $"Retrieved from storage for application '{applicationName}'"
+                    });
+                }
+            }
+
+            // If still not found, search all applications
+            var allConfigs = _storage.GetAllConfigurationsAsync().Result;
+            var foundConfig = allConfigs.FirstOrDefault(c =>
+                c.Name.Equals(key, StringComparison.OrdinalIgnoreCase) && c.IsActive == 1);
+
+            if (foundConfig != null)
+            {
+                return Ok(new
+                {
+                    key,
+                    value = foundConfig.Value,
+                    type = foundConfig.Type.ToString(),
+                    source = $"Storage ({foundConfig.ApplicationName})",
+                    note = $"Found in application '{foundConfig.ApplicationName}' via storage search"
+                });
+            }
+
+            return Ok(new
+            {
+                key,
+                value = (string?)null,
+                type = "not_found",
+                source = "none",
+                note = "Configuration key not found in ConfigurationReader or any application in storage"
+            });
         }
         catch (Exception ex)
         {
