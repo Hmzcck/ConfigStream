@@ -33,7 +33,8 @@ public class MongoConfigurationStorage : IConfigurationStorage, IDisposable
         _ = Task.Run(CreateIndexes);
     }
 
-    public async Task<ConfigurationItem?> GetAsync(string applicationName, string key)
+    public async Task<ConfigurationItem?> GetAsync(string applicationName, string key,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationName);
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
@@ -46,7 +47,7 @@ public class MongoConfigurationStorage : IConfigurationStorage, IDisposable
                 Builders<ConfigurationItem>.Filter.Eq(x => x.IsActive, 1)
             );
 
-            return await _collection.Find(filter).FirstOrDefaultAsync();
+            return await _collection.Find(filter).FirstOrDefaultAsync(cancellationToken);
         }
         catch (MongoException ex)
         {
@@ -55,7 +56,8 @@ public class MongoConfigurationStorage : IConfigurationStorage, IDisposable
         }
     }
 
-    public async Task<IEnumerable<ConfigurationItem>> GetAllAsync(string applicationName)
+    public async Task<IEnumerable<ConfigurationItem>> GetAllAsync(string applicationName,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationName);
 
@@ -66,8 +68,9 @@ public class MongoConfigurationStorage : IConfigurationStorage, IDisposable
                 Builders<ConfigurationItem>.Filter.Eq(x => x.IsActive, 1)
             );
 
-            IAsyncCursor<ConfigurationItem> cursor = await _collection.FindAsync(filter);
-            return await cursor.ToListAsync();
+            IAsyncCursor<ConfigurationItem> cursor =
+                await _collection.FindAsync(filter, cancellationToken: cancellationToken);
+            return await cursor.ToListAsync(cancellationToken);
         }
         catch (MongoException ex)
         {
@@ -77,7 +80,8 @@ public class MongoConfigurationStorage : IConfigurationStorage, IDisposable
     }
 
 
-    public async Task<ConfigurationItem?> SetAsync(ConfigurationItem item)
+    public async Task<ConfigurationItem?> SetAsync(ConfigurationItem item,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(item);
 
@@ -88,17 +92,18 @@ public class MongoConfigurationStorage : IConfigurationStorage, IDisposable
                 Builders<ConfigurationItem>.Filter.Eq(x => x.Name, item.Name)
             );
 
-            ConfigurationItem existingRecord = await _collection.Find(filter).FirstOrDefaultAsync();
+            ConfigurationItem existingRecord = await _collection.Find(filter).FirstOrDefaultAsync(cancellationToken);
 
             if (existingRecord != null)
             {
                 item.Id = existingRecord.Id;
-                ReplaceOneResult result = await _collection.ReplaceOneAsync(filter, item);
+                ReplaceOneResult result =
+                    await _collection.ReplaceOneAsync(filter, item, cancellationToken: cancellationToken);
                 return result.IsAcknowledged ? item : null;
             }
 
             item.Id = ObjectId.GenerateNewId().ToString();
-            await _collection.InsertOneAsync(item);
+            await _collection.InsertOneAsync(item, cancellationToken: cancellationToken);
             return item;
         }
         catch (MongoException ex)
@@ -109,7 +114,8 @@ public class MongoConfigurationStorage : IConfigurationStorage, IDisposable
         }
     }
 
-    public async Task<bool> DeleteAsync(string applicationName, string key)
+    public async Task<bool> DeleteAsync(string applicationName, string key,
+        CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationName);
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
@@ -124,7 +130,8 @@ public class MongoConfigurationStorage : IConfigurationStorage, IDisposable
             UpdateDefinition<ConfigurationItem> update = Builders<ConfigurationItem>.Update
                 .Set(x => x.IsActive, 0);
 
-            UpdateResult result = await _collection.UpdateOneAsync(filter, update);
+            UpdateResult result =
+                await _collection.UpdateOneAsync(filter, update, cancellationToken: cancellationToken);
             return result.IsAcknowledged && result.ModifiedCount > 0;
         }
         catch (MongoException ex)

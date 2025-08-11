@@ -1,6 +1,7 @@
 using ConfigStream.Core.Interfaces;
 using ConfigStream.Core.Models;
 using Microsoft.Extensions.Logging;
+using System.Text;
 using System.Text.Json;
 
 namespace ConfigStream.Core.Services;
@@ -31,13 +32,14 @@ public class FileCacheService : IFileCacheService
     }
 
 
-    public async Task<ConfigurationItem?> GetConfigurationAsync(string applicationName, string key)
+    public async Task<ConfigurationItem?> GetConfigurationAsync(string applicationName, string key,
+        CancellationToken cancellationToken = default)
 
     {
-        await _fileLock.WaitAsync();
+        await _fileLock.WaitAsync(cancellationToken);
         try
         {
-            CachedConfiguration? cachedConfig = await LoadCachedConfigurationAsync(applicationName);
+            CachedConfiguration? cachedConfig = await LoadCachedConfigurationAsync(applicationName, cancellationToken);
 
             if (cachedConfig == null || IsExpired(cachedConfig))
             {
@@ -64,12 +66,13 @@ public class FileCacheService : IFileCacheService
         }
     }
 
-    public async Task SaveConfigurationAsync(string applicationName, string key, ConfigurationItem configuration)
+    public async Task SaveConfigurationAsync(string applicationName, string key, ConfigurationItem configuration,
+        CancellationToken cancellationToken = default)
     {
-        await _fileLock.WaitAsync();
+        await _fileLock.WaitAsync(cancellationToken);
         try
         {
-            CachedConfiguration cachedConfig = await LoadCachedConfigurationAsync(applicationName) ??
+            CachedConfiguration cachedConfig = await LoadCachedConfigurationAsync(applicationName, cancellationToken) ??
                                                CreateNewCachedConfiguration(applicationName);
 
             cachedConfig.Configurations[key] = new CachedConfigurationItem
@@ -83,7 +86,7 @@ public class FileCacheService : IFileCacheService
             cachedConfig.LastUpdated = DateTime.UtcNow;
             cachedConfig.ExpiresAt = DateTime.UtcNow.Add(_defaultCacheExpiry);
 
-            await SaveCachedConfigurationAsync(applicationName, cachedConfig);
+            await SaveCachedConfigurationAsync(applicationName, cachedConfig, cancellationToken);
 
             _logger.LogDebug("Saved configuration {Key} to cache for {ApplicationName}", key, applicationName);
         }
@@ -98,12 +101,13 @@ public class FileCacheService : IFileCacheService
         }
     }
 
-    public async Task<IEnumerable<ConfigurationItem>> GetAllConfigurationsAsync(string applicationName)
+    public async Task<IEnumerable<ConfigurationItem>> GetAllConfigurationsAsync(string applicationName,
+        CancellationToken cancellationToken = default)
     {
-        await _fileLock.WaitAsync();
+        await _fileLock.WaitAsync(cancellationToken);
         try
         {
-            CachedConfiguration? cachedConfig = await LoadCachedConfigurationAsync(applicationName);
+            CachedConfiguration? cachedConfig = await LoadCachedConfigurationAsync(applicationName, cancellationToken);
 
             if (cachedConfig == null || IsExpired(cachedConfig))
             {
@@ -126,9 +130,10 @@ public class FileCacheService : IFileCacheService
         }
     }
 
-    public async Task SaveAllConfigurationsAsync(string applicationName, IEnumerable<ConfigurationItem> configurations)
+    public async Task SaveAllConfigurationsAsync(string applicationName, IEnumerable<ConfigurationItem> configurations,
+        CancellationToken cancellationToken = default)
     {
-        await _fileLock.WaitAsync();
+        await _fileLock.WaitAsync(cancellationToken);
         try
         {
             CachedConfiguration cachedConfig = CreateNewCachedConfiguration(applicationName);
@@ -144,7 +149,7 @@ public class FileCacheService : IFileCacheService
                 };
             }
 
-            await SaveCachedConfigurationAsync(applicationName, cachedConfig);
+            await SaveCachedConfigurationAsync(applicationName, cachedConfig, cancellationToken);
 
             _logger.LogDebug("Saved {Count} configurations to cache for {ApplicationName}",
                 cachedConfig.Configurations.Count, applicationName);
@@ -159,12 +164,12 @@ public class FileCacheService : IFileCacheService
         }
     }
 
-    public async Task CleanupExpiredCacheAsync()
+    public async Task CleanupExpiredCacheAsync(CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(_cacheDirectory))
             return;
 
-        await _fileLock.WaitAsync();
+        await _fileLock.WaitAsync(cancellationToken);
         try
         {
             string[] files = Directory.GetFiles(_cacheDirectory, "*_config.json");
@@ -172,9 +177,10 @@ public class FileCacheService : IFileCacheService
 
             foreach (string file in files)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 try
                 {
-                    string json = await File.ReadAllTextAsync(file);
+                    string json = await File.ReadAllTextAsync(file, cancellationToken);
                     CachedConfiguration? cachedConfig =
                         JsonSerializer.Deserialize<CachedConfiguration>(json, _jsonOptions);
 
@@ -215,9 +221,9 @@ public class FileCacheService : IFileCacheService
         }
     }
 
-    public async Task ClearCacheAsync(string applicationName)
+    public async Task ClearCacheAsync(string applicationName, CancellationToken cancellationToken = default)
     {
-        await _fileLock.WaitAsync();
+        await _fileLock.WaitAsync(cancellationToken);
         try
         {
             string filePath = GetCacheFilePath(applicationName);
@@ -238,15 +244,18 @@ public class FileCacheService : IFileCacheService
     }
 
 
-    private async Task<CachedConfiguration?> LoadCachedConfigurationAsync(string applicationName)
+    private async Task<CachedConfiguration?> LoadCachedConfigurationAsync(string applicationName,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         string filePath = GetCacheFilePath(applicationName);
 
         if (!File.Exists(filePath))
             return null;
         try
         {
-            string json = await File.ReadAllTextAsync(filePath);
+            string json = await File.ReadAllTextAsync(filePath, cancellationToken);
             return JsonSerializer.Deserialize<CachedConfiguration>(json, _jsonOptions);
         }
         catch (JsonException ex)
@@ -256,11 +265,13 @@ public class FileCacheService : IFileCacheService
         }
     }
 
-    private async Task SaveCachedConfigurationAsync(string applicationName, CachedConfiguration cachedConfig)
+    private async Task SaveCachedConfigurationAsync(string applicationName, CachedConfiguration cachedConfig,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         string filePath = GetCacheFilePath(applicationName);
         string json = JsonSerializer.Serialize(cachedConfig, _jsonOptions);
-        await File.WriteAllTextAsync(filePath, json);
+        await File.WriteAllTextAsync(filePath, json, cancellationToken);
     }
 
     private CachedConfiguration CreateNewCachedConfiguration(string applicationName)
@@ -294,13 +305,20 @@ public class FileCacheService : IFileCacheService
 
     private string GetCacheFilePath(string applicationName)
     {
-        var sanitizedName = SanitizeFileName(applicationName);
+        string sanitizedName = SanitizeFileName(applicationName);
         return Path.Combine(_cacheDirectory, $"{sanitizedName}_config.json");
     }
 
     private static string SanitizeFileName(string fileName)
     {
-        return string.Join("_", fileName.Split(Path.GetInvalidFileNameChars()));
+        HashSet<char> invalidChars = new HashSet<char>(Path.GetInvalidFileNameChars());
+        StringBuilder sanitized = new();
+        foreach (char ch in fileName)
+        {
+            sanitized.Append(!invalidChars.Contains(ch) ? ch : '_');
+        }
+
+        return sanitized.ToString();
     }
 
     private void EnsureCacheDirectoryExists()
