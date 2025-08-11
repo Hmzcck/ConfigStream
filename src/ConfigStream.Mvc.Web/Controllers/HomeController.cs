@@ -1,3 +1,4 @@
+using ConfigStream.Core.Interfaces;
 using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using ConfigStream.Mvc.Web.Models;
@@ -7,10 +8,12 @@ namespace ConfigStream.Mvc.Web.Controllers;
 public class HomeController : Controller
 {
     private readonly ILogger<HomeController> _logger;
+    private readonly IConfigurationReader _configurationReader;
 
-    public HomeController(ILogger<HomeController> logger)
+    public HomeController(ILogger<HomeController> logger, IConfigurationReader configurationReader)
     {
         _logger = logger;
+        _configurationReader = configurationReader;
     }
 
     public IActionResult Index()

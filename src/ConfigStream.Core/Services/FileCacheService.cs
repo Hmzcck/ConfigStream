@@ -6,7 +6,7 @@ using System.Text.Json;
 
 namespace ConfigStream.Core.Services;
 
-public class FileCacheService : IFileCacheService
+public class FileCacheService : IFileCacheService, IDisposable
 {
     private readonly ILogger<FileCacheService> _logger;
     private readonly string _cacheDirectory;
@@ -36,6 +36,9 @@ public class FileCacheService : IFileCacheService
         CancellationToken cancellationToken = default)
 
     {
+        ArgumentException.ThrowIfNullOrEmpty(applicationName);
+        ArgumentException.ThrowIfNullOrEmpty(key);
+
         await _fileLock.WaitAsync(cancellationToken);
         try
         {
@@ -133,6 +136,9 @@ public class FileCacheService : IFileCacheService
     public async Task SaveAllConfigurationsAsync(string applicationName, IEnumerable<ConfigurationItem> configurations,
         CancellationToken cancellationToken = default)
     {
+        ArgumentException.ThrowIfNullOrWhiteSpace(applicationName);
+        ArgumentNullException.ThrowIfNull(configurations);
+
         await _fileLock.WaitAsync(cancellationToken);
         try
         {
@@ -336,5 +342,10 @@ public class FileCacheService : IFileCacheService
             _logger.LogError(ex, "Failed to create cache directory: {CacheDirectory}", _cacheDirectory);
             throw;
         }
+    }
+
+    public void Dispose()
+    {
+        _fileLock?.Dispose();
     }
 }
