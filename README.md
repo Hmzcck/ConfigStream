@@ -35,20 +35,25 @@ A powerful, scalable dynamic configuration management system built with .NET 8 t
 ConfigStream/
 ├── src/
 │   ├── ConfigStream.Core/           # Core interfaces and services
-│   │   ├── Interfaces/             # Contract definitions
-│   │   ├── Models/                 # Data models
-│   │   ├── Services/              # Core business logic
-│   │   └── Logging/               # Centralized logging
-│   ├── ConfigStream.MongoDb/       # MongoDB integration
-│   │   ├── Services/              # MongoDB storage implementation
-│   │   └── Extensions/            # DI registration extensions
-│   └── ConfigStream.Mvc.Web/      # Web application & API
-│       ├── Controllers/           # API controllers
-│       ├── Views/                 # MVC views
-│       └── wwwroot/               # Static assets
+│   │   ├── Interfaces/              # Contract definitions
+│   │   ├── Models/                  # Data models
+│   │   ├── Services/                # Core business logic
+│   │   └── Logging/                 # Centralized logging
+│   ├── ConfigStream.MongoDb/        # MongoDB integration
+│   │   ├── Services/                # MongoDB storage implementation
+│   │   └── Extensions/              # DI registration extensions
+│   └── ConfigStream.Mvc.Web/        # Web application & API
+│       ├── Controllers/             # API controllers
+│       ├── Views/                   # MVC views
+│       └── wwwroot/                 # Static assets
+├── tests/
+│   ├── ConfigStream.Core.Tests/     # Core project unit tests
+│   │   ├── ConfigurationReaderTests.cs
+│   │   ├── FileCacheServiceTests.cs
+│   │   └── TypeConverterServiceTests.cs
 ├── docker/                        # Docker initialization scripts
 ├── Dockerfile                     # Application container
-├── docker-compose.yml            # Multi-service orchestration
+├── docker-compose.yml             # Multi-service orchestration
 └── README.md                      # This file
 ```
 
