@@ -136,8 +136,12 @@
         });
 
         function loadConfigurations() {
-            const appName = $('#filterByApplication').val() || 'ConfigurationLibrary.Mvc.Web';
-            $.get(`/api/configuration?applicationName=${appName}`, function (data) {
+            const appName = $('#filterByApplication').val();
+            
+            // If no specific application selected, get ALL configurations from ALL applications
+            const url = appName ? `/api/configuration?applicationName=${appName}` : '/api/configuration';
+            
+            $.get(url, function (data) {
                 const tbody = $('#configurationsTable tbody');
                 tbody.empty();
 

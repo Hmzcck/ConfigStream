@@ -10,6 +10,11 @@ public interface IConfigurationStorage
     Task<IEnumerable<ConfigurationItem>> GetAllAsync(string applicationName,
         CancellationToken cancellationToken = default);
 
+    Task<IEnumerable<ConfigurationItem>> GetAllConfigurationsAsync(
+        CancellationToken cancellationToken = default);
+
+    Task<IEnumerable<string>> GetApplicationsAsync(CancellationToken cancellationToken = default);
+
     Task<ConfigurationItem?> SetAsync(ConfigurationItem item, CancellationToken cancellationToken = default);
     Task<bool> DeleteAsync(string applicationName, string key, CancellationToken cancellationToken = default);
 }

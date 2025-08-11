@@ -1,4 +1,5 @@
 using ConfigStream.Core.Interfaces;
+using ConfigStream.Core.Logging;
 using ConfigStream.Core.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -8,6 +9,7 @@ namespace ConfigStream.Mvc.Web.Controllers;
 [Route("api/[controller]")]
 public class ConfigurationController : ControllerBase
 {
+    private static readonly ILogger<ConfigurationController> _logger = Logging.CreateLogger<ConfigurationController>();
     private readonly IConfigurationStorage _storage;
     private readonly IConfigurationReader _reader;
 
@@ -19,18 +21,33 @@ public class ConfigurationController : ControllerBase
 
     [HttpGet]
     public async Task<ActionResult<IEnumerable<ConfigurationItem>>> GetAll(
-        [FromQuery] string applicationName = "ConfigurationLibrary.Mvc.Web")
+        [FromQuery] string? applicationName = null)
     {
         try
         {
-            var records = await _storage.GetAllAsync(applicationName);
-            return Ok(records);
+            if (string.IsNullOrEmpty(applicationName))
+            {
+                // Get ALL configurations from ALL applications
+                var allRecords = await _storage.GetAllConfigurationsAsync();
+                return Ok(allRecords);
+            }
+            else
+            {
+                // Get configurations for specific application
+                var records = await _storage.GetAllAsync(applicationName);
+                return Ok(records);
+            }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Storage failed, try to get from file cache via reader
-            // TODO: Implement GetAll method
-            return Ok(new List<ConfigurationItem>());
+            _logger.LogError(ex, "Storage failed for GetAll, application '{ApplicationName}'",
+                applicationName ?? "ALL");
+            return StatusCode(503,
+                new
+                {
+                    error = "Configuration storage unavailable",
+                    message = "Unable to retrieve configurations at this time"
+                });
         }
     }
 
@@ -42,12 +59,17 @@ public class ConfigurationController : ControllerBase
             var record = await _storage.GetAsync(applicationName, name);
 
             if (record == null)
+            {
                 return NotFound();
+            }
 
             return Ok(record);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex,
+                "Storage failed for configuration '{Name}' in application '{ApplicationName}', trying fallback", name,
+                applicationName);
             // Storage failed, try to get from file cache via reader
             // Injected reader might be for a different application
             try
@@ -65,9 +87,9 @@ public class ConfigurationController : ControllerBase
                     });
                 }
             }
-            catch (Exception)
+            catch (Exception readerEx)
             {
-                // File cache also failed
+                _logger.LogWarning(readerEx, "Fallback reader also failed for configuration '{Name}'", name);
             }
 
             return NotFound();
@@ -80,11 +102,18 @@ public class ConfigurationController : ControllerBase
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
+
         var savedItem = await _storage.SetAsync(item);
 
         if (savedItem == null)
+        {
+            _logger.LogWarning("Failed to create configuration '{Name}' for application '{ApplicationName}'", item.Name,
+                item.ApplicationName);
             return BadRequest("Failed to create configuration");
+        }
 
+        _logger.LogInformation("Created configuration '{Name}' for application '{ApplicationName}'", item.Name,
+            item.ApplicationName);
         return CreatedAtAction(nameof(GetByName),
             new { applicationName = savedItem.ApplicationName, name = savedItem.Name }, savedItem);
     }
@@ -95,15 +124,27 @@ public class ConfigurationController : ControllerBase
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
+
         var existingRecord = await _storage.GetAsync(item.ApplicationName, item.Name);
         if (existingRecord == null)
+        {
+            _logger.LogWarning(
+                "Attempted to update non-existent configuration '{Name}' for application '{ApplicationName}'",
+                item.Name, item.ApplicationName);
             return NotFound();
+        }
 
         var updatedItem = await _storage.SetAsync(item);
 
         if (updatedItem == null)
+        {
+            _logger.LogWarning("Failed to update configuration '{Name}' for application '{ApplicationName}'", item.Name,
+                item.ApplicationName);
             return BadRequest("Failed to update configuration");
+        }
 
+        _logger.LogInformation("Updated configuration '{Name}' for application '{ApplicationName}'", item.Name,
+            item.ApplicationName);
         return NoContent();
     }
 
@@ -112,13 +153,24 @@ public class ConfigurationController : ControllerBase
     {
         var record = await _storage.GetAsync(applicationName, name);
         if (record == null)
+        {
+            _logger.LogWarning(
+                "Attempted to delete non-existent configuration '{Name}' for application '{ApplicationName}'", name,
+                applicationName);
             return NotFound();
+        }
 
         var success = await _storage.DeleteAsync(applicationName, name);
 
         if (!success)
+        {
+            _logger.LogWarning("Failed to delete configuration '{Name}' for application '{ApplicationName}'", name,
+                applicationName);
             return BadRequest("Failed to delete configuration");
+        }
 
+        _logger.LogInformation("Deleted configuration '{Name}' for application '{ApplicationName}'", name,
+            applicationName);
         return NoContent();
     }
 
@@ -128,10 +180,12 @@ public class ConfigurationController : ControllerBase
         try
         {
             var value = _reader.GetValue<string>(key);
+
             return Ok(new { key, value, type = "string" });
         }
         catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Reader test failed for key '{Key}'", key);
             return BadRequest(new { error = ex.Message });
         }
     }
@@ -139,8 +193,18 @@ public class ConfigurationController : ControllerBase
     [HttpGet("applications")]
     public async Task<ActionResult<IEnumerable<string>>> GetApplications()
     {
-        // TODO: Implement this method
-        var applications = new[] { "ConfigurationLibrary.Mvc.Web", "SERVICE-A", "SERVICE-B" };
-        return Ok(applications);
+        try
+        {
+            var applications = await _storage.GetApplicationsAsync();
+
+            _logger.LogInformation(applications.ToString());
+
+            return Ok(applications);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to retrieve applications list");
+            return StatusCode(500, new { error = "Failed to retrieve applications", message = ex.Message });
+        }
     }
 }

@@ -194,7 +194,7 @@ public class ConfigurationReader : IConfigurationReader, IDisposable
                 "ConfigStream.MongoDb.MongoConfigurationStorage");
 
             _mongoStorage = (IConfigurationStorage)Activator.CreateInstance(
-                mongoStorageType!, _connectionString)!;
+                mongoStorageType!, _connectionString, "DynamicConfiguration")!;
 
             return _mongoStorage;
         }
