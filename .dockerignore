@@ -1,0 +1,62 @@
+# .NET build artifacts
+**/bin/
+**/obj/
+**/out/
+
+# Visual Studio files
+.vs/
+.vscode/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# IDE files
+**/.idea/
+**/launchSettings.json
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Docker files (don't copy into container)
+**/Dockerfile*
+**/docker-compose*
+**/.dockerignore
+
+# Documentation
+**/README.md
+**/LICENSE
+
+# Test files
+**/TestResults/
+
+# Temporary files
+**/tmp/
+**/temp/
+
+# Package files
+**/packages/
+**/node_modules/
+
+# Log files
+**/logs/
+**/*.log
+
+# Database files
+**/*.db
+**/*.sqlite
+
+# Environment files
+**/.env
+**/.env.local
+**/.env.*.local
