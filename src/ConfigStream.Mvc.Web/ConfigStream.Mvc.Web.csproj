@@ -9,8 +9,6 @@
   <ItemGroup>
     <ProjectReference Include="../ConfigStream.Core/ConfigStream.Core.csproj" />
     <ProjectReference Include="../ConfigStream.MongoDb/ConfigStream.MongoDb.csproj" />
-    <ProjectReference Include="../ConfigStream.RabbitMq/ConfigStream.RabbitMq.csproj" />
-    <ProjectReference Include="../ConfigStream.Redis/ConfigStream.Redis.csproj" />
   </ItemGroup>
 
 </Project>
