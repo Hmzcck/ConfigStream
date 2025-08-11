@@ -1,12 +1,13 @@
 using ConfigStream.Core.Interfaces;
 using ConfigStream.Core.Models;
-using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Logging;
 using System.Reflection;
 
 namespace ConfigStream.Core.Services;
 
 public class ConfigurationReader : IConfigurationReader, IDisposable
 {
+    private static readonly ILogger _logger = Logging.Logging.CreateLogger<ConfigurationReader>();
     private readonly ITypeConverterService _typeConverter;
     private readonly string _applicationName;
     private readonly string _connectionString;
@@ -27,7 +28,7 @@ public class ConfigurationReader : IConfigurationReader, IDisposable
         _refreshIntervalMs = refreshTimerIntervalInMs;
         _typeConverter = new TypeConverterService();
 
-        _fileCacheService = new FileCacheService(NullLogger<FileCacheService>.Instance);
+        _fileCacheService = new FileCacheService();
 
         if (_refreshIntervalMs > 0)
         {
@@ -40,9 +41,9 @@ public class ConfigurationReader : IConfigurationReader, IDisposable
                 {
                     await RefreshConfigurationsCallback();
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // Log error but don't crash the timer
+                    _logger.LogError(ex, "Configuration refresh timer failed for application '{ApplicationName}'", _applicationName);
                 }
                 finally
                 {
@@ -69,17 +70,17 @@ public class ConfigurationReader : IConfigurationReader, IDisposable
                                 await _fileCacheService.SaveConfigurationAsync(_applicationName, key, config))
                             .ConfigureAwait(false);
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
-                        // Ignore cache save failures
+                        _logger.LogWarning(ex, "Failed to save configuration '{Key}' to file cache for application '{ApplicationName}'", key, _applicationName);
                     }
 
                     return _typeConverter.Convert<T>(config.Value, config.Type);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // MongoDB failed, fall back to file cache
+                _logger.LogWarning(ex, "MongoDB failed for key '{Key}' in application '{ApplicationName}', falling back to file cache", key, _applicationName);
             }
         }
 
@@ -95,9 +96,9 @@ public class ConfigurationReader : IConfigurationReader, IDisposable
                 return _typeConverter.Convert<T>(fileConfig.Value, fileConfig.Type);
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // File cache also failed
+            _logger.LogError(ex, "File cache failed for key '{Key}' in application '{ApplicationName}'", key, _applicationName);
         }
 
         return default;
@@ -124,9 +125,9 @@ public class ConfigurationReader : IConfigurationReader, IDisposable
                             await _fileCacheService.SaveConfigurationAsync(_applicationName, key, config,
                                 CancellationToken.None);
                         }
-                        catch (Exception)
+                        catch (Exception ex)
                         {
-                            // Ignore cache save failures
+                            _logger.LogWarning(ex, "Failed to save configuration '{Key}' to file cache for application '{ApplicationName}'", key, _applicationName);
                         }
                     }, CancellationToken.None);
 
@@ -134,9 +135,9 @@ public class ConfigurationReader : IConfigurationReader, IDisposable
                     {
                         return _typeConverter.Convert<T>(config.Value, config.Type);
                     }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
-                        // Type conversion failed, try file cache
+                        _logger.LogWarning(ex, "Type conversion failed for key '{Key}' in application '{ApplicationName}', trying file cache", key, _applicationName);
                     }
                 }
             }
@@ -144,9 +145,9 @@ public class ConfigurationReader : IConfigurationReader, IDisposable
             {
                 throw;
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // MongoDB failed, fall back to file cache
+                _logger.LogWarning(ex, "MongoDB async operation failed for key '{Key}' in application '{ApplicationName}', falling back to file cache", key, _applicationName);
             }
         }
 
@@ -163,9 +164,9 @@ public class ConfigurationReader : IConfigurationReader, IDisposable
                 {
                     return _typeConverter.Convert<T>(fileConfig.Value, fileConfig.Type);
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // Type conversion failed
+                    _logger.LogError(ex, "Type conversion failed for key '{Key}' in application '{ApplicationName}'", key, _applicationName);
                 }
             }
         }
@@ -173,9 +174,9 @@ public class ConfigurationReader : IConfigurationReader, IDisposable
         {
             throw;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // File cache also failed
+            _logger.LogError(ex, "File cache failed for key '{Key}' in application '{ApplicationName}'", key, _applicationName);
         }
 
         return default;
@@ -197,9 +198,9 @@ public class ConfigurationReader : IConfigurationReader, IDisposable
 
             return _mongoStorage;
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Failed to initialize MongoDB storage - application will run in offline mode
+            _logger.LogWarning(ex, "Failed to initialize MongoDB storage for application '{ApplicationName}' - running in offline mode", _applicationName);
             return null;
         }
     }
@@ -231,15 +232,15 @@ public class ConfigurationReader : IConfigurationReader, IDisposable
                     await _fileCacheService.SaveAllConfigurationsAsync(_applicationName, activeConfigs,
                         cancellationTokenSource.Token);
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    // Failed to save configurations to file cache
+                    _logger.LogWarning(ex, "Failed to save configurations to file cache for application '{ApplicationName}'", _applicationName);
                 }
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Configuration refresh failed
+            _logger.LogError(ex, "Configuration refresh failed for application '{ApplicationName}'", _applicationName);
         }
     }
 

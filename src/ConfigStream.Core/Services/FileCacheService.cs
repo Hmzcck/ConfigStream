@@ -8,15 +8,14 @@ namespace ConfigStream.Core.Services;
 
 public class FileCacheService : IFileCacheService, IDisposable
 {
-    private readonly ILogger<FileCacheService> _logger;
+    private static readonly ILogger _logger = Logging.Logging.CreateLogger<FileCacheService>();
     private readonly string _cacheDirectory;
     private readonly JsonSerializerOptions _jsonOptions;
     private readonly SemaphoreSlim _fileLock;
     private readonly TimeSpan _defaultCacheExpiry;
 
-    public FileCacheService(ILogger<FileCacheService> logger)
+    public FileCacheService()
     {
-        _logger = logger;
         _cacheDirectory = Path.Combine(Path.GetTempPath(), "DynamicConfig");
         _fileLock = new SemaphoreSlim(1, 1);
         _defaultCacheExpiry = TimeSpan.FromHours(24);
@@ -205,9 +204,9 @@ public class FileCacheService : IFileCacheService, IDisposable
                         File.Delete(file);
                         cleanupCount++;
                     }
-                    catch
+                    catch (Exception deleteEx)
                     {
-                        //TODO: Implement later
+                        _logger.LogError(deleteEx, "Failed to delete corrupted cache file {File} during cleanup", file);
                     }
                 }
             }
