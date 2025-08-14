@@ -289,6 +289,20 @@ public class MongoConfigurationStorage : IConfigurationStorage, IDisposable
         }
     }
 
+    public async Task<bool> PingAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var result = await _database.RunCommandAsync<BsonDocument>(new BsonDocument("ping", 1), cancellationToken: cancellationToken);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "MongoDB ping failed");
+            return false;
+        }
+    }
+
     public void Dispose()
     {
         _logger.LogDebug("Disposing MongoDB client connection");

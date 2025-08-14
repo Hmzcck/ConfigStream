@@ -185,7 +185,27 @@ public class ConfigurationReader : IConfigurationReader, IDisposable
     private IConfigurationStorage? GetMongoStorage()
     {
         if (_mongoStorage != null)
-            return _mongoStorage;
+        {
+            // Test connection before returning cached instance
+            try
+            {
+                bool isConnected = Task.Run(async () => await _mongoStorage.PingAsync())
+                    .ConfigureAwait(false).GetAwaiter().GetResult();
+                
+                if (isConnected)
+                    return _mongoStorage;
+                
+                _logger.LogWarning("MongoDB ping failed for application '{ApplicationName}' - resetting storage", _applicationName);
+                (_mongoStorage as IDisposable)?.Dispose();
+                _mongoStorage = null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "MongoDB connection test failed for application '{ApplicationName}' - resetting storage", _applicationName);
+                (_mongoStorage as IDisposable)?.Dispose();
+                _mongoStorage = null;
+            }
+        }
 
         try
         {
@@ -193,9 +213,20 @@ public class ConfigurationReader : IConfigurationReader, IDisposable
             Type? mongoStorageType = mongoAssembly.GetType(
                 "ConfigStream.MongoDb.MongoConfigurationStorage");
 
-            _mongoStorage = (IConfigurationStorage)Activator.CreateInstance(
+            var storage = (IConfigurationStorage)Activator.CreateInstance(
                 mongoStorageType!, _connectionString, "DynamicConfiguration")!;
 
+            // Test connection before caching
+            bool isConnected = Task.Run(async () => await storage.PingAsync())
+                .ConfigureAwait(false).GetAwaiter().GetResult();
+            
+            if (!isConnected)
+            {
+                (storage as IDisposable)?.Dispose();
+                throw new InvalidOperationException("MongoDB ping failed");
+            }
+
+            _mongoStorage = storage;
             return _mongoStorage;
         }
         catch (Exception ex)

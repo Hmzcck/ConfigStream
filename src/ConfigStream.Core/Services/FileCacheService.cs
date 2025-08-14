@@ -248,6 +248,53 @@ public class FileCacheService : IFileCacheService, IDisposable
         }
     }
 
+    public async Task<IEnumerable<string>> GetAllApplicationNamesAsync(CancellationToken cancellationToken = default)
+    {
+        if (!Directory.Exists(_cacheDirectory))
+            return [];
+
+        await _fileLock.WaitAsync(cancellationToken);
+
+        try
+        {
+            string[] files = Directory.GetFiles(_cacheDirectory, "*_config.json");
+            var applicationNames = new List<string>();
+
+            foreach (string file in files)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                try
+                {
+                    string json = await File.ReadAllTextAsync(file, cancellationToken);
+
+                    var cachedConfiguration = JsonSerializer.Deserialize<CachedConfiguration>(json, _jsonOptions);
+
+                    if (cachedConfiguration != null && !IsExpired(cachedConfiguration) &&
+                        !String.IsNullOrEmpty(cachedConfiguration.ApplicationName))
+                    {
+                        applicationNames.Add(cachedConfiguration.ApplicationName);
+                    }
+                }
+                catch (Exception e)
+                {
+                    _logger.LogWarning(e, "Failed to read cache file {File} while getting application names", file);
+                }
+            }
+
+            return applicationNames.Distinct().OrderBy(name => name);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Failed to get application names from cache");
+            return [];
+        }
+        finally
+        {
+            _fileLock.Release();
+        }
+    }
+
 
     private async Task<CachedConfiguration?> LoadCachedConfigurationAsync(string applicationName,
         CancellationToken cancellationToken = default)

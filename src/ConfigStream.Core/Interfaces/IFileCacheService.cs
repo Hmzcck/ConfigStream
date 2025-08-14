@@ -18,4 +18,5 @@ public interface IFileCacheService
 
   Task CleanupExpiredCacheAsync(CancellationToken cancellationToken = default);
   Task ClearCacheAsync(string applicationName, CancellationToken cancellationToken = default);
+  Task<IEnumerable<string>> GetAllApplicationNamesAsync(CancellationToken cancellationToken = default);
 }

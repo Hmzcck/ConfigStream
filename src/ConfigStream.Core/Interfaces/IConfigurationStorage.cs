@@ -17,4 +17,5 @@ public interface IConfigurationStorage
 
     Task<ConfigurationItem?> SetAsync(ConfigurationItem item, CancellationToken cancellationToken = default);
     Task<bool> DeleteAsync(string applicationName, string key, CancellationToken cancellationToken = default);
+    Task<bool> PingAsync(CancellationToken cancellationToken = default);
 }

@@ -11,6 +11,8 @@ builder.Services.AddMongoDbStorage(
     builder.Configuration.GetConnectionString("MongoDB") ?? "mongodb://localhost:27017"
 );
 
+builder.Services.AddSingleton<IFileCacheService, FileCacheService>();
+
 builder.Services.AddSingleton<IConfigurationReader>(sp =>
     new ConfigurationReader(
         applicationName: "ConfigurationLibrary.Mvc.Web",

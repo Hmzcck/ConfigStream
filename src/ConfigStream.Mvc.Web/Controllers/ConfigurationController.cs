@@ -12,11 +12,13 @@ public class ConfigurationController : ControllerBase
     private static readonly ILogger<ConfigurationController> _logger = Logging.CreateLogger<ConfigurationController>();
     private readonly IConfigurationStorage _storage;
     private readonly IConfigurationReader _reader;
+    private readonly IFileCacheService _fileCacheService;
 
-    public ConfigurationController(IConfigurationStorage storage, IConfigurationReader reader)
+    public ConfigurationController(IConfigurationStorage storage, IConfigurationReader reader, IFileCacheService fileCacheService)
     {
         _storage = storage;
         _reader = reader;
+        _fileCacheService = fileCacheService;
     }
 
     [HttpGet]
@@ -257,8 +259,19 @@ public class ConfigurationController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to retrieve applications list");
-            return StatusCode(500, new { error = "Failed to retrieve applications", message = ex.Message });
+            _logger.LogWarning(ex, "MongoDB failed to retrieve applications list, falling back to file cache");
+
+            try
+            {
+                var applications = await _fileCacheService.GetAllApplicationNamesAsync();
+
+                return Ok(applications);
+            }
+            catch (Exception e)
+            {
+                _logger.LogError(ex, "Failed to retrieve applications list");
+                return StatusCode(500, new { error = "Failed to retrieve applications", message = ex.Message });
+            }
         }
     }
 }
