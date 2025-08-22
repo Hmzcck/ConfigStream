@@ -1,4 +1,5 @@
 using ConfigStream.RabbitMq.Configuration;
+using ConfigStream.RabbitMq.Interfaces;
 using ConfigStream.RabbitMq.Services;
 using MassTransit;
 using Microsoft.Extensions.Configuration;
@@ -28,7 +29,7 @@ public static class ServiceCollectionExtensions
             });
         });
 
-        services.AddScoped<IConfigurationProvider, ConfigurationProvider>();
+        services.AddScoped<IConfigurationPublisher, ConfigurationPublisher>();
 
         return services;
     }

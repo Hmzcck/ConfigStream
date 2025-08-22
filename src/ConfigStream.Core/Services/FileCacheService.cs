@@ -248,6 +248,55 @@ public class FileCacheService : IFileCacheService, IDisposable
         }
     }
 
+    public async Task UpdateConfigurationAsync(string applicationName, string key, string value,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(applicationName);
+        ArgumentException.ThrowIfNullOrEmpty(key);
+        ArgumentNullException.ThrowIfNull(value);
+
+        await _fileLock.WaitAsync(cancellationToken);
+        try
+        {
+            CachedConfiguration? cachedConfig = await LoadCachedConfigurationAsync(applicationName, cancellationToken);
+
+            if (cachedConfig != null && !IsExpired(cachedConfig))
+            {
+                // Update existing cache entry
+                if (cachedConfig.Configurations.TryGetValue(key, out CachedConfigurationItem? existingItem))
+                {
+                    existingItem.Value = value;
+                    existingItem.CachedAt = DateTime.UtcNow;
+
+                    cachedConfig.LastUpdated = DateTime.UtcNow;
+
+                    await SaveCachedConfigurationAsync(applicationName, cachedConfig, cancellationToken);
+
+                    _logger.LogDebug("Updated configuration {Key} in cache for {ApplicationName} with value: {Value}",
+                        key, applicationName, value);
+                }
+                else
+                {
+                    _logger.LogDebug("Configuration {Key} not found in cache for {ApplicationName}, skipping update",
+                        key, applicationName);
+                }
+            }
+            else
+            {
+                _logger.LogDebug("Cache expired or not found for {ApplicationName}, skipping update", applicationName);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to update configuration {Key} in cache for {ApplicationName}",
+                key, applicationName);
+        }
+        finally
+        {
+            _fileLock.Release();
+        }
+    }
+
     public async Task<IEnumerable<string>> GetAllApplicationNamesAsync(CancellationToken cancellationToken = default)
     {
         if (!Directory.Exists(_cacheDirectory))

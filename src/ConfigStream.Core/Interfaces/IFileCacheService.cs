@@ -16,6 +16,9 @@ public interface IFileCacheService
   Task SaveAllConfigurationsAsync(string applicationName, IEnumerable<ConfigurationItem> configurations,
     CancellationToken cancellationToken = default);
 
+  Task UpdateConfigurationAsync(string applicationName, string key, string value,
+    CancellationToken cancellationToken = default);
+
   Task CleanupExpiredCacheAsync(CancellationToken cancellationToken = default);
   Task ClearCacheAsync(string applicationName, CancellationToken cancellationToken = default);
   Task<IEnumerable<string>> GetAllApplicationNamesAsync(CancellationToken cancellationToken = default);

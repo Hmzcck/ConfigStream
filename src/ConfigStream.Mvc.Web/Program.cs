@@ -1,6 +1,7 @@
 using ConfigStream.Core.Interfaces;
 using ConfigStream.Core.Services;
 using ConfigStream.MongoDb.Extensions;
+using ConfigStream.RabbitMq.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -10,6 +11,8 @@ builder.Services.AddControllersWithViews();
 builder.Services.AddMongoDbStorage(
     builder.Configuration.GetConnectionString("MongoDB") ?? "mongodb://localhost:27017"
 );
+
+builder.Services.AddRabbitMq(builder.Configuration);
 
 builder.Services.AddSingleton<IFileCacheService, FileCacheService>();
 

@@ -1,6 +1,7 @@
 using ConfigStream.Core.Interfaces;
 using ConfigStream.Core.Logging;
 using ConfigStream.Core.Models;
+using ConfigStream.RabbitMq.Interfaces;
 using Microsoft.AspNetCore.Mvc;
 
 namespace ConfigStream.Mvc.Web.Controllers;
@@ -13,12 +14,15 @@ public class ConfigurationController : ControllerBase
     private readonly IConfigurationStorage _storage;
     private readonly IConfigurationReader _reader;
     private readonly IFileCacheService _fileCacheService;
+    private readonly IConfigurationPublisher _publisher;
 
-    public ConfigurationController(IConfigurationStorage storage, IConfigurationReader reader, IFileCacheService fileCacheService)
+    public ConfigurationController(IConfigurationStorage storage, IConfigurationReader reader,
+        IFileCacheService fileCacheService, IConfigurationPublisher publisher)
     {
         _storage = storage;
         _reader = reader;
         _fileCacheService = fileCacheService;
+        _publisher = publisher;
     }
 
     [HttpGet]
@@ -116,6 +120,9 @@ public class ConfigurationController : ControllerBase
 
         _logger.LogInformation("Created configuration '{Name}' for application '{ApplicationName}'", item.Name,
             item.ApplicationName);
+
+        await _publisher.PublishConfigurationUpdated(item.ApplicationName, item.Name, item.Value);
+
         return CreatedAtAction(nameof(GetByName),
             new { applicationName = savedItem.ApplicationName, name = savedItem.Name }, savedItem);
     }
@@ -147,6 +154,9 @@ public class ConfigurationController : ControllerBase
 
         _logger.LogInformation("Updated configuration '{Name}' for application '{ApplicationName}'", item.Name,
             item.ApplicationName);
+
+        await _publisher.PublishConfigurationUpdated(item.ApplicationName, item.Name, item.Value);
+
         return NoContent();
     }
 
